@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Session tracker">
+<meta name="theme-color" content="#f3f1e8">
+<title>Session tracker</title>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+  :root {
+    --ink: #211f1a;
+    --paper: #f2ede2;
+    --paper-2: #fffdf8;
+    --line: #ddd5c2;
+    --sage: #5c6b47;
+    --sage-dark: #3f4a31;
+    --rust: #b5562f;
+    --muted: #8c8574;
+    --sage-text: #3f4a31;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: calc(22px + env(safe-area-inset-top, 0px)) 16px calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .save-state { font-size: 12px; color: var(--muted); }
+  .day-toggle { display: flex; gap: 8px; margin: 18px 0 20px; }
+  .day-btn {
+    flex: 1; padding: 12px 0; text-align: center;
+    border: 1.5px solid var(--line); border-radius: 10px;
+    background: var(--paper-2); font-size: 15px; font-weight: 700;
+    color: var(--muted); cursor: pointer;
+  }
+  .day-btn.active { border-color: var(--sage-dark); background: var(--sage-dark); color: #fdfbf6; }
+  .slot {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px 14px 12px; margin-bottom: 14px;
+    box-shadow: var(--card-shadow, 0 1px 3px rgba(33,31,26,0.08));
+  }
+  .slot-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+  .pattern-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .pattern { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--rust); font-weight: 700; }
+  .info-btn, .demo-btn {
+    width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--rust);
+    color: var(--rust); font-size: 10px; font-weight: 700; line-height: 14px;
+    text-align: center; cursor: pointer; background: transparent; padding: 0; flex-shrink: 0;
+  }
+  .demo-btn { border-color: var(--sage-dark); color: var(--sage-dark); font-size: 8px; }
+  .blurb {
+    display: none; font-size: 12.5px; color: var(--muted); line-height: 1.5;
+    margin: 2px 0 8px; padding-left: 2px;
+  }
+  .blurb.show { display: block; }
+  .ex-input {
+    width: 100%; border: none; border-bottom: 1.5px dashed var(--line);
+    background: transparent; font-size: 16px; font-weight: 700; padding: 2px 0 4px; color: var(--ink);
+  }
+  .ex-input:focus { outline: none; border-bottom-color: var(--sage-dark); }
+  .ex-input::placeholder { color: #c2bba6; font-weight: 600; }
+  .target-row { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .target { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .sets-stepper { display: flex; align-items: center; gap: 6px; }
+  .sets-stepper button {
+    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--paper); color: var(--ink); font-size: 14px; font-weight: 700;
+    line-height: 1; cursor: pointer; padding: 0;
+  }
+  .sets-stepper span { font-size: 12px; font-weight: 700; color: var(--sage-dark); min-width: 34px; text-align: center; }
+  .client-block { margin-top: 10px; }
+  .client-name {
+    font-size: 13px; font-weight: 700; color: var(--sage-dark);
+    border: none; background: transparent; padding: 2px 0; width: 100%;
+  }
+  .client-name:focus { outline: none; }
+  table.set-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.set-table th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    text-align: center; font-weight: 700; padding: 2px 2px 4px;
+  }
+  table.set-table th:first-child { text-align: left; width: 34px; }
+  table.set-table td { padding: 2px 2px; text-align: center; }
+  table.set-table td:first-child {
+    text-align: left; font-size: 12px; font-weight: 700; color: var(--muted);
+  }
+  table.set-table input[type=number] {
+    width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+    color: var(--ink); text-align: center; font-size: 14px; padding: 5px 2px; -moz-appearance: textfield;
+  }
+  table.set-table input[type=number]::-webkit-inner-spin-button,
+  table.set-table input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  table.set-table input:focus { outline: none; border-color: var(--sage-dark); }
+  .rir-select {
+    width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+    color: var(--ink); text-align: center; font-size: 13px; padding: 5px 0;
+  }
+  .toolbar { display: flex; gap: 10px; margin-top: 14px; }
+  .toolbar button {
+    flex: 1; padding: 12px 0; border-radius: 10px; font-size: 13.5px; font-weight: 700;
+    cursor: pointer; border: 1.5px solid var(--line); background: var(--paper-2); color: var(--ink);
+  }
+  .toolbar button.primary { background: var(--rust); border-color: var(--rust); color: #fff; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .guide-term { margin-bottom: 12px; }
+  .guide-term-name { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+  .guide-term-def { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .archive-set-line { font-size: 12.5px; margin-bottom: 3px; }
+  .archive-client-name { font-size: 13px; font-weight: 700; color: var(--sage-dark); margin-top: 6px; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
+    background: var(--sage-dark); color: #fff; font-size: 14px; font-weight: 600;
+    padding: 12px 20px; border-radius: 10px; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease; z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .style-row { margin-bottom: 16px; }
+  .style-row-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .swatch {
+    width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
+    padding: 0;
+  }
+  .swatch.selected { border-color: var(--ink); }
+  .choice-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .choice-btn {
+    padding: 8px 14px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--paper);
+    color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .choice-btn.selected { border-color: var(--sage-dark); background: var(--sage-dark); color: #fdfbf6; }
+  #bgLayer {
+    position: fixed; inset: 0; z-index: -1; background-size: cover; background-position: center;
+    background-color: var(--paper); background-blend-mode: overlay;
+    opacity: var(--bg-opacity, 0.32); pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .bg-url-row { display: flex; gap: 8px; }
+  .bg-url-row input[type=text] {
+    flex: 1; border: 1.5px solid var(--line); border-radius: 8px; background: var(--paper);
+    color: var(--ink); font-size: 13px; padding: 8px 10px;
+  }
+  .bg-url-row button {
+    padding: 8px 14px; border-radius: 8px; border: 1.5px solid var(--sage-dark);
+    background: var(--sage-dark); color: #fdfbf6; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="bgLayer"></div>
+<div class="wrap">
+  <div class="top">
+    <h1>Session tracker</h1>
+    <span class="save-state" id="saveState">loading…</span>
+  </div>
+
+  <div class="day-toggle">
+    <button class="day-btn active" id="btnA" onclick="switchDay('A')">Day A</button>
+    <button class="day-btn" id="btnB" onclick="switchDay('B')">Day B</button>
+  </div>
+
+  <div id="slots"></div>
+
+  <div class="toolbar">
+    <button onclick="addClient()">+ Add client</button>
+    <button class="primary" onclick="saveToArchive()">Save to archive</button>
+  </div>
+  <div class="toolbar">
+    <button onclick="newSession()">Clear numbers</button>
+    <button onclick="toggleArchiveView()" id="archiveToggle">View archive</button>
+    <button onclick="toggleGuide()" id="guideToggle">Guide</button>
+  </div>
+  <div class="toolbar">
+    <button onclick="toggleStyle()" id="styleToggle">Customize look</button>
+  </div>
+
+  <div id="archiveView" style="display:none;"></div>
+  <div id="guideView" style="display:none;"></div>
+  <div id="styleView" style="display:none;"></div>
+
+  <p class="hint">Tap the (i) next to any exercise for a one-line reminder of what it's training, or the play icon for a form-demo search. Use the +/- next to "Sets" to change how many sets that exercise gets — weight, reps, and RIR are tracked separately for each one.</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- Fill these in from your Firebase project (Project settings > your web app > SDK setup and configuration) ----
+// Leave any value as '' to skip Firebase and fall back to on-device storage instead.
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyD_tmxXDYlzx3_legMEsGytJt25YrPBK0s',
+  authDomain: 'live-gym-backend.firebaseapp.com',
+  projectId: 'live-gym-backend',
+  storageBucket: 'live-gym-backend.firebasestorage.app',
+  messagingSenderId: '385571173926',
+  appId: '1:385571173926:web:b7f58cc735bdf86c9ad8e7'
+};
+// -----------------------------------------------------------------------------------------------------------
+
+const hasNativeStorage = typeof window !== 'undefined' && !!window.storage;
+let firestoreDb = null;
+let lastKnownStateJSON = null;
+let firestoreEnabled = false;
+
+function tryInitFirestore() {
+  if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) return;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    firestoreDb = firebase.firestore();
+    firestoreEnabled = true;
+  } catch (e) {
+    firestoreEnabled = false;
+  }
+}
+
+async function storageGet(key, shared) {
+  if (firestoreEnabled) {
+    try {
+      const doc = await firestoreDb.collection('tracker-store').doc(key).get();
+      return doc.exists ? { value: doc.data().value } : null;
+    } catch (e) { return null; }
+  }
+  if (hasNativeStorage) {
+    try { return await window.storage.get(key, shared); } catch (e) { return null; }
+  }
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { value: raw } : null;
+  } catch (e) { return null; }
+}
+
+async function storageSet(key, value, shared) {
+  if (firestoreEnabled) {
+    try {
+      await firestoreDb.collection('tracker-store').doc(key).set({ value: value });
+      return { value };
+    } catch (e) { return null; }
+  }
+  if (hasNativeStorage) {
+    try { return await window.storage.set(key, value, shared); } catch (e) { return null; }
+  }
+  try {
+    localStorage.setItem(key, value);
+    return { value };
+  } catch (e) { return null; }
+}
+
+function subscribeLiveUpdates() {
+  if (!firestoreEnabled) return;
+  firestoreDb.collection('tracker-store').doc('workout-tracker-state').onSnapshot(doc => {
+    if (!doc.exists) return;
+    const incoming = doc.data().value;
+    if (incoming === lastKnownStateJSON) return;
+    lastKnownStateJSON = incoming;
+    state = JSON.parse(incoming);
+    render();
+    setSaveState('synced (live update)');
+  });
+}
+
+function showToast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+const PATTERN_INFO = {
+  'Squat pattern': 'Knee-dominant strength — the base most other leg and full-body lifts build on.',
+  'Horizontal push': 'Chest, shoulders, triceps — pushing weight away from your body.',
+  'Vertical pull': 'Back and biceps — pulling from overhead, balances out pressing work.',
+  'Hip thrust / glute': 'Direct glute work — key for hip strength and knee/back protection.',
+  'Single-joint — biceps': 'Isolates the biceps for extra, low-fatigue volume once the big lifts are done.',
+  'Hip-hinge pattern': 'Hamstrings, glutes, low back — bending at the hips, not the knees.',
+  'Horizontal pull': 'Mid-back and biceps — pulling weight toward your body.',
+  'Vertical push': 'Shoulders and triceps — pressing overhead.',
+  'Leg press / lunge': 'More quad and glute work with less spinal loading than a squat.',
+  'Single-joint — triceps': 'Isolates the triceps for extra, low-fatigue volume once the big lifts are done.'
+};
+
+const GLOSSARY = [
+  { term: 'RIR — reps in reserve', def: 'How many more reps you could still do before hitting failure. RIR 3 means you stopped 3 reps short of your max for that set.' },
+  { term: 'Working set', def: 'A set that counts toward your target — not a warm-up or a practice rep.' },
+  { term: 'Why sets start at 2', def: 'You are both new to lifting, so the priority is learning the movement well, not maxing out volume. Use the +/- next to an exercise to add more once it feels easy.' },
+  { term: 'Why we don\'t go to full failure yet', def: 'Pushing to true failure before your technique is solid raises injury risk without adding much extra muscle growth. High RIR keeps every rep clean while you learn.' }
+];
+
+function defaultDays() {
+  return {
+    A: [
+      { pattern: 'Squat pattern', exercise: '', sets: 2 },
+      { pattern: 'Horizontal push', exercise: '', sets: 2 },
+      { pattern: 'Vertical pull', exercise: '', sets: 2 },
+      { pattern: 'Hip thrust / glute', exercise: '', sets: 2 },
+      { pattern: 'Single-joint — biceps', exercise: '', sets: 2 }
+    ],
+    B: [
+      { pattern: 'Hip-hinge pattern', exercise: '', sets: 2 },
+      { pattern: 'Horizontal pull', exercise: '', sets: 2 },
+      { pattern: 'Vertical push', exercise: '', sets: 2 },
+      { pattern: 'Leg press / lunge', exercise: '', sets: 2 },
+      { pattern: 'Single-joint — triceps', exercise: '', sets: 2 }
+    ]
+  };
+}
+
+const ACCENT_SWATCHES = [
+  { name: 'Rust', value: '#b5562f' },
+  { name: 'Teal', value: '#2f7a6e' },
+  { name: 'Plum', value: '#7a4a8a' },
+  { name: 'Mustard', value: '#a8791f' },
+  { name: 'Slate', value: '#4a5a8a' },
+  { name: 'Crimson', value: '#a13a3a' }
+];
+
+const FONT_CHOICES = [
+  { name: 'System', value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+  { name: 'Serif', value: "Georgia, 'Iowan Old Style', 'Palatino Linotype', serif" },
+  { name: 'Rounded', value: "ui-rounded, 'SF Pro Rounded', 'Segoe UI', sans-serif" }
+];
+
+const LIGHT_PALETTE = { ink: '#211f1a', paper: '#f2ede2', paper2: '#fffdf8', line: '#ddd5c2', muted: '#8c8574', sageText: '#3f4a31' };
+const DARK_PALETTE = { ink: '#f4efe2', paper: '#16180f', paper2: '#282b21', line: '#454a3a', muted: '#aca795', sageText: '#a3c47f' };
+
+function defaultTheme() {
+  return { accent: '#b5562f', mode: 'light', font: FONT_CHOICES[0].value, backgroundImage: '' };
+}
+
+const DEFAULT_STATE = {
+  currentDay: 'A',
+  clients: ['Client 1', 'Client 2'],
+  days: defaultDays(),
+  logs: {}
+};
+
+// Look-and-feel lives on this device only — never synced through Firebase — so each phone can look different.
+let localTheme = defaultTheme();
+
+function loadLocalTheme() {
+  try {
+    const raw = localStorage.getItem('workout-tracker-theme-local');
+    if (raw) localTheme = Object.assign(defaultTheme(), JSON.parse(raw));
+  } catch (e) { localTheme = defaultTheme(); }
+}
+
+function saveLocalTheme() {
+  try { localStorage.setItem('workout-tracker-theme-local', JSON.stringify(localTheme)); } catch (e) {}
+}
+
+let state = null;
+let saveTimeout = null;
+let archiveVisible = false;
+let guideVisible = false;
+let currentArchiveList = [];
+
+function emptySetEntry() { return { weight: '', reps: '', rir: '' }; }
+
+function logKey(day, slotIdx, clientIdx) { return day + '-' + slotIdx + '-' + clientIdx; }
+
+function getLog(day, slotIdx, clientIdx) {
+  const key = logKey(day, slotIdx, clientIdx);
+  const targetSets = state.days[day][slotIdx].sets || 2;
+  if (!state.logs[key] || !Array.isArray(state.logs[key].entries)) {
+    state.logs[key] = { entries: [] };
+  }
+  const log = state.logs[key];
+  while (log.entries.length < targetSets) log.entries.push(emptySetEntry());
+  if (log.entries.length > targetSets) log.entries = log.entries.slice(0, targetSets);
+  return log;
+}
+
+async function loadState() {
+  tryInitFirestore();
+  const result = await storageGet('workout-tracker-state', true);
+  if (result) {
+    lastKnownStateJSON = result.value;
+    state = JSON.parse(result.value);
+    if (!state.days || !state.days.A || !state.days.A[0] || typeof state.days.A[0].sets === 'undefined') {
+      const oldDays = state.days;
+      state.days = defaultDays();
+      ['A', 'B'].forEach(d => {
+        if (oldDays && oldDays[d]) {
+          oldDays[d].forEach((slot, i) => {
+            if (state.days[d][i]) state.days[d][i].exercise = slot.exercise || '';
+          });
+        }
+      });
+      state.logs = {};
+    }
+  } else {
+    state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  }
+  loadLocalTheme();
+  applyTheme();
+  render();
+  setSaveState(firestoreEnabled ? 'synced (live)' : 'synced (this device)');
+  subscribeLiveUpdates();
+}
+
+function scheduleSave() {
+  setSaveState('saving…');
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async () => {
+    const json = JSON.stringify(state);
+    lastKnownStateJSON = json;
+    const result = await storageSet('workout-tracker-state', json, true);
+    setSaveState(result ? (firestoreEnabled ? 'synced (live)' : 'synced (this device)') : 'save failed');
+  }, 500);
+}
+
+function setSaveState(text) { document.getElementById('saveState').textContent = text; }
+
+function switchDay(day) {
+  state.currentDay = day;
+  document.getElementById('btnA').classList.toggle('active', day === 'A');
+  document.getElementById('btnB').classList.toggle('active', day === 'B');
+  render();
+  scheduleSave();
+}
+
+function addClient() {
+  const n = state.clients.length + 1;
+  state.clients.push('Client ' + n);
+  render();
+  scheduleSave();
+}
+
+function updateExercise(day, slotIdx, value) {
+  state.days[day][slotIdx].exercise = value;
+  scheduleSave();
+}
+
+function updateSets(day, slotIdx, delta) {
+  const slot = state.days[day][slotIdx];
+  const next = Math.max(1, Math.min(8, (slot.sets || 2) + delta));
+  slot.sets = next;
+  render();
+  scheduleSave();
+}
+
+function updateSetField(day, slotIdx, clientIdx, setIdx, field, value) {
+  const log = getLog(day, slotIdx, clientIdx);
+  log.entries[setIdx][field] = value;
+  scheduleSave();
+}
+
+function newSession() {
+  state.logs = {};
+  render();
+  scheduleSave();
+}
+
+function toggleBlurb(id) {
+  document.getElementById(id).classList.toggle('show');
+}
+
+function openDemo(day, slotIdx) {
+  const slot = state.days[day][slotIdx];
+  const name = (slot.exercise || slot.pattern).trim();
+  const query = encodeURIComponent(name + ' exercise form');
+  window.open('https://www.youtube.com/results?search_query=' + query, '_blank');
+}
+
+async function saveToArchive() {
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const entry = {
+    date: dateLabel,
+    timestamp: today.getTime(),
+    day: state.currentDay,
+    clients: JSON.parse(JSON.stringify(state.clients)),
+    slots: JSON.parse(JSON.stringify(state.days[state.currentDay])),
+    logs: JSON.parse(JSON.stringify(state.logs))
+  };
+  const existing = await storageGet('workout-tracker-archive', true);
+  const list = existing ? JSON.parse(existing.value) : [];
+  list.unshift(entry);
+  const result = await storageSet('workout-tracker-archive', JSON.stringify(list), true);
+  if (result) {
+    showToast('Session saved to archive ✓');
+  } else {
+    showToast('Could not save — try again');
+  }
+}
+
+async function toggleArchiveView() {
+  if (guideVisible) toggleGuide();
+  if (document.getElementById('styleView').style.display !== 'none') toggleStyle();
+  const el = document.getElementById('archiveView');
+  archiveVisible = !archiveVisible;
+  document.getElementById('archiveToggle').textContent = archiveVisible ? 'Hide archive' : 'View archive';
+  if (!archiveVisible) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<p class="hint">Loading…</p>';
+  const result = await storageGet('workout-tracker-archive', true);
+  currentArchiveList = result ? JSON.parse(result.value) : [];
+  renderArchive(currentArchiveList);
+}
+
+async function deleteArchiveEntry(timestamp) {
+  if (!confirm('Delete this archived session? This can\'t be undone.')) return;
+  currentArchiveList = currentArchiveList.filter(e => e.timestamp !== timestamp);
+  const result = await storageSet('workout-tracker-archive', JSON.stringify(currentArchiveList), true);
+  if (result) {
+    showToast('Session deleted');
+    renderArchive(currentArchiveList);
+  } else {
+    showToast('Could not delete — try again');
+  }
+}
+
+async function editArchiveEntry(timestamp) {
+  const entry = currentArchiveList.find(e => e.timestamp === timestamp);
+  if (!entry) return;
+  state.currentDay = entry.day;
+  state.days[entry.day] = JSON.parse(JSON.stringify(entry.slots));
+  entry.slots.forEach((slot, slotIdx) => {
+    entry.clients.forEach((name, clientIdx) => {
+      const key = logKey(entry.day, slotIdx, clientIdx);
+      const srcKey = entry.day + '-' + slotIdx + '-' + clientIdx;
+      if (entry.logs[srcKey]) state.logs[key] = JSON.parse(JSON.stringify(entry.logs[srcKey]));
+    });
+  });
+  currentArchiveList = currentArchiveList.filter(e => e.timestamp !== timestamp);
+  await storageSet('workout-tracker-archive', JSON.stringify(currentArchiveList), true);
+  archiveVisible = true;
+  toggleArchiveView();
+  document.getElementById('btnA').classList.toggle('active', entry.day === 'A');
+  document.getElementById('btnB').classList.toggle('active', entry.day === 'B');
+  render();
+  scheduleSave();
+  window.scrollTo(0, 0);
+  showToast('Loaded for editing — save to archive again when done');
+}
+
+function renderArchive(list) {
+  const el = document.getElementById('archiveView');
+  if (!list.length) { el.innerHTML = '<p class="hint">No archived sessions yet — log some numbers and tap "Save to archive".</p>'; return; }
+  el.innerHTML = '';
+  list.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'slot';
+    const headRow = document.createElement('div');
+    headRow.style.display = 'flex';
+    headRow.style.justifyContent = 'space-between';
+    headRow.style.alignItems = 'center';
+    headRow.style.marginBottom = '6px';
+    const head = document.createElement('div');
+    head.style.fontWeight = '700';
+    head.textContent = entry.date + ' — Day ' + entry.day;
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '6px';
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Edit';
+    editBtn.style.cssText = 'font-size:11px;font-weight:700;padding:4px 9px;border-radius:7px;border:1px solid var(--sage-dark);background:transparent;color:var(--sage-dark);cursor:pointer;';
+    editBtn.addEventListener('click', () => editArchiveEntry(entry.timestamp));
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Delete';
+    delBtn.style.cssText = 'font-size:11px;font-weight:700;padding:4px 9px;border-radius:7px;border:1px solid var(--rust);background:transparent;color:var(--rust);cursor:pointer;';
+    delBtn.addEventListener('click', () => deleteArchiveEntry(entry.timestamp));
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    headRow.appendChild(head);
+    headRow.appendChild(actions);
+    card.appendChild(headRow);
+
+    let anyData = false;
+    entry.slots.forEach((slot, slotIdx) => {
+      const label = slot.exercise || ('(' + slot.pattern + ')');
+      const exLine = document.createElement('div');
+      exLine.style.fontSize = '13px';
+      exLine.style.fontWeight = '700';
+      exLine.style.marginTop = '8px';
+      exLine.textContent = label;
+      card.appendChild(exLine);
+
+      entry.clients.forEach((name, clientIdx) => {
+        const key = entry.day + '-' + slotIdx + '-' + clientIdx;
+        const log = entry.logs[key];
+        const entries = (log && Array.isArray(log.entries)) ? log.entries : [];
+        const parts = entries
+          .map((e, i) => (e.weight || e.reps || e.rir) ? ('Set ' + (i + 1) + ': ' + (e.weight || '?') + ' x ' + (e.reps || '?') + ' @RIR ' + (e.rir || '?')) : null)
+          .filter(Boolean);
+        if (parts.length) {
+          anyData = true;
+          const nameLine = document.createElement('div');
+          nameLine.className = 'archive-client-name';
+          nameLine.textContent = name;
+          card.appendChild(nameLine);
+          parts.forEach(p => {
+            const line = document.createElement('div');
+            line.className = 'archive-set-line';
+            line.textContent = p;
+            card.appendChild(line);
+          });
+        }
+      });
+    });
+
+    if (!anyData) {
+      const none = document.createElement('div');
+      none.className = 'hint';
+      none.style.marginTop = '6px';
+      none.textContent = 'No numbers were logged this session — just exercise names.';
+      card.appendChild(none);
+    }
+
+    el.appendChild(card);
+  });
+}
+
+function toggleGuide() {
+  if (archiveVisible) toggleArchiveView();
+  if (document.getElementById('styleView').style.display !== 'none') toggleStyle();
+  const el = document.getElementById('guideView');
+  guideVisible = !guideVisible;
+  document.getElementById('guideToggle').textContent = guideVisible ? 'Hide guide' : 'Guide';
+  if (!guideVisible) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  renderGuide();
+}
+
+function renderGuide() {
+  const el = document.getElementById('guideView');
+  el.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'slot';
+  const heading = document.createElement('div');
+  heading.style.fontWeight = '700';
+  heading.style.marginBottom = '10px';
+  heading.textContent = 'A few things worth knowing';
+  card.appendChild(heading);
+  GLOSSARY.forEach(g => {
+    const wrap = document.createElement('div');
+    wrap.className = 'guide-term';
+    const name = document.createElement('div');
+    name.className = 'guide-term-name';
+    name.textContent = g.term;
+    const def = document.createElement('div');
+    def.className = 'guide-term-def';
+    def.textContent = g.def;
+    wrap.appendChild(name);
+    wrap.appendChild(def);
+    card.appendChild(wrap);
+  });
+  el.appendChild(card);
+}
+
+function applyTheme() {
+  const t = localTheme;
+  const palette = t.mode === 'dark' ? DARK_PALETTE : LIGHT_PALETTE;
+  const root = document.documentElement.style;
+  root.setProperty('--rust', t.accent);
+  root.setProperty('--ink', palette.ink);
+  root.setProperty('--paper', palette.paper);
+  root.setProperty('--paper-2', palette.paper2);
+  root.setProperty('--line', palette.line);
+  root.setProperty('--muted', palette.muted);
+  root.setProperty('--sage-text', palette.sageText);
+  root.setProperty('--bg-opacity', t.mode === 'dark' ? '0.14' : '0.32');
+  root.setProperty('--card-shadow', t.mode === 'dark'
+    ? '0 2px 10px rgba(0,0,0,0.5)'
+    : '0 1px 3px rgba(33,31,26,0.08), 0 1px 2px rgba(33,31,26,0.05)');
+  document.body.style.fontFamily = t.font;
+  const bgLayer = document.getElementById('bgLayer');
+  bgLayer.style.backgroundImage = t.backgroundImage ? 'url(' + JSON.stringify(t.backgroundImage).slice(1, -1) + ')' : 'none';
+}
+
+function setAccent(value) {
+  localTheme.accent = value;
+  applyTheme();
+  renderStyle();
+  saveLocalTheme();
+}
+
+function setMode(value) {
+  localTheme.mode = value;
+  applyTheme();
+  renderStyle();
+  saveLocalTheme();
+}
+
+function setFont(value) {
+  localTheme.font = value;
+  applyTheme();
+  renderStyle();
+  saveLocalTheme();
+}
+
+function setBackgroundImage() {
+  const input = document.getElementById('bgImageInput');
+  localTheme.backgroundImage = input.value.trim();
+  applyTheme();
+  saveLocalTheme();
+  showToast(localTheme.backgroundImage ? 'Background image set' : 'Background image cleared');
+}
+
+function clearBackgroundImage() {
+  localTheme.backgroundImage = '';
+  document.getElementById('bgImageInput').value = '';
+  applyTheme();
+  saveLocalTheme();
+  showToast('Background image cleared');
+}
+
+function toggleStyle() {
+  if (archiveVisible) toggleArchiveView();
+  if (guideVisible) toggleGuide();
+  const el = document.getElementById('styleView');
+  const visible = el.style.display !== 'none';
+  document.getElementById('styleToggle').textContent = visible ? 'Customize look' : 'Hide customize';
+  el.style.display = visible ? 'none' : 'block';
+  if (!visible) renderStyle();
+}
+
+function renderStyle() {
+  const el = document.getElementById('styleView');
+  el.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'slot';
+
+  const heading = document.createElement('div');
+  heading.style.fontWeight = '700';
+  heading.style.marginBottom = '14px';
+  heading.textContent = 'Look and feel';
+  card.appendChild(heading);
+
+  const accentRow = document.createElement('div');
+  accentRow.className = 'style-row';
+  const accentLabel = document.createElement('div');
+  accentLabel.className = 'style-row-label';
+  accentLabel.textContent = 'Accent color';
+  accentRow.appendChild(accentLabel);
+  const swatchRow = document.createElement('div');
+  swatchRow.className = 'swatch-row';
+  ACCENT_SWATCHES.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'swatch' + (localTheme.accent === s.value ? ' selected' : '');
+    btn.style.background = s.value;
+    btn.setAttribute('aria-label', s.name);
+    btn.addEventListener('click', () => setAccent(s.value));
+    swatchRow.appendChild(btn);
+  });
+  accentRow.appendChild(swatchRow);
+  card.appendChild(accentRow);
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'style-row';
+  const modeLabel = document.createElement('div');
+  modeLabel.className = 'style-row-label';
+  modeLabel.textContent = 'Background';
+  modeRow.appendChild(modeLabel);
+  const modeChoiceRow = document.createElement('div');
+  modeChoiceRow.className = 'choice-row';
+  [['light', 'Light'], ['dark', 'Dark']].forEach(([value, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn' + (localTheme.mode === value ? ' selected' : '');
+    btn.textContent = label;
+    btn.addEventListener('click', () => setMode(value));
+    modeChoiceRow.appendChild(btn);
+  });
+  modeRow.appendChild(modeChoiceRow);
+  card.appendChild(modeRow);
+
+  const fontRow = document.createElement('div');
+  fontRow.className = 'style-row';
+  const fontLabel = document.createElement('div');
+  fontLabel.className = 'style-row-label';
+  fontLabel.textContent = 'Font';
+  fontRow.appendChild(fontLabel);
+  const fontChoiceRow = document.createElement('div');
+  fontChoiceRow.className = 'choice-row';
+  FONT_CHOICES.forEach(f => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn' + (localTheme.font === f.value ? ' selected' : '');
+    btn.textContent = f.name;
+    btn.style.fontFamily = f.value;
+    btn.addEventListener('click', () => setFont(f.value));
+    fontChoiceRow.appendChild(btn);
+  });
+  fontRow.appendChild(fontChoiceRow);
+  card.appendChild(fontRow);
+
+  const bgRow = document.createElement('div');
+  bgRow.className = 'style-row';
+  const bgLabel = document.createElement('div');
+  bgLabel.className = 'style-row-label';
+  bgLabel.textContent = 'Background image (optional)';
+  bgRow.appendChild(bgLabel);
+  const bgUrlRow = document.createElement('div');
+  bgUrlRow.className = 'bg-url-row';
+  const bgInput = document.createElement('input');
+  bgInput.type = 'text';
+  bgInput.id = 'bgImageInput';
+  bgInput.placeholder = 'Paste an image URL';
+  bgInput.value = localTheme.backgroundImage || '';
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.addEventListener('click', setBackgroundImage);
+  bgUrlRow.appendChild(bgInput);
+  bgUrlRow.appendChild(applyBtn);
+  bgRow.appendChild(bgUrlRow);
+  if (localTheme.backgroundImage) {
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear image';
+    clearBtn.style.cssText = 'margin-top:8px;font-size:12px;font-weight:700;padding:6px 12px;border-radius:7px;border:1px solid var(--rust);background:transparent;color:var(--rust);cursor:pointer;';
+    clearBtn.addEventListener('click', clearBackgroundImage);
+    bgRow.appendChild(clearBtn);
+  }
+  card.appendChild(bgRow);
+
+  el.appendChild(card);
+}
+
+function render() {
+  const day = state.currentDay;
+  const slots = state.days[day];
+  const container = document.getElementById('slots');
+  container.innerHTML = '';
+
+  slots.forEach((slot, slotIdx) => {
+    const div = document.createElement('div');
+    div.className = 'slot';
+
+    const head = document.createElement('div');
+    head.className = 'slot-head';
+
+    const left = document.createElement('div');
+    left.style.flex = '1';
+
+    const patternRow = document.createElement('div');
+    patternRow.className = 'pattern-row';
+    const patternLabel = document.createElement('span');
+    patternLabel.className = 'pattern';
+    patternLabel.textContent = slot.pattern;
+    const infoId = 'blurb-' + day + '-' + slotIdx;
+    const infoBtn = document.createElement('button');
+    infoBtn.className = 'info-btn';
+    infoBtn.textContent = 'i';
+    infoBtn.setAttribute('aria-label', 'Why this exercise');
+    infoBtn.addEventListener('click', () => toggleBlurb(infoId));
+    const demoBtn = document.createElement('button');
+    demoBtn.className = 'demo-btn';
+    demoBtn.textContent = String.fromCharCode(9654);
+    demoBtn.setAttribute('aria-label', 'Watch a demo of this exercise');
+    demoBtn.addEventListener('click', () => openDemo(day, slotIdx));
+    patternRow.appendChild(patternLabel);
+    patternRow.appendChild(infoBtn);
+    patternRow.appendChild(demoBtn);
+
+    const blurb = document.createElement('div');
+    blurb.className = 'blurb';
+    blurb.id = infoId;
+    blurb.textContent = PATTERN_INFO[slot.pattern] || '';
+
+    const exInput = document.createElement('input');
+    exInput.className = 'ex-input';
+    exInput.placeholder = 'Exercise name';
+    exInput.value = slot.exercise;
+    exInput.addEventListener('input', (e) => updateExercise(day, slotIdx, e.target.value));
+
+    left.appendChild(patternRow);
+    left.appendChild(blurb);
+    left.appendChild(exInput);
+
+    const targetRow = document.createElement('div');
+    targetRow.className = 'target-row';
+    const target = document.createElement('div');
+    target.className = 'target';
+    target.textContent = '8–12 reps';
+    const stepper = document.createElement('div');
+    stepper.className = 'sets-stepper';
+    const minusBtn = document.createElement('button');
+    minusBtn.textContent = '−';
+    minusBtn.addEventListener('click', () => updateSets(day, slotIdx, -1));
+    const countLabel = document.createElement('span');
+    countLabel.textContent = (slot.sets || 2) + ' sets';
+    const plusBtn = document.createElement('button');
+    plusBtn.textContent = '+';
+    plusBtn.addEventListener('click', () => updateSets(day, slotIdx, 1));
+    stepper.appendChild(minusBtn);
+    stepper.appendChild(countLabel);
+    stepper.appendChild(plusBtn);
+    targetRow.appendChild(target);
+    targetRow.appendChild(stepper);
+
+    head.appendChild(left);
+    head.appendChild(targetRow);
+    div.appendChild(head);
+
+    state.clients.forEach((clientName, clientIdx) => {
+      const log = getLog(day, slotIdx, clientIdx);
+      const block = document.createElement('div');
+      block.className = 'client-block';
+
+      const nameInput = document.createElement('input');
+      nameInput.className = 'client-name';
+      nameInput.value = clientName;
+      nameInput.addEventListener('input', (e) => {
+        state.clients[clientIdx] = e.target.value;
+        scheduleSave();
+      });
+      block.appendChild(nameInput);
+
+      const table = document.createElement('table');
+      table.className = 'set-table';
+      const thead = document.createElement('tr');
+      thead.innerHTML = '<th>Set</th><th>Weight</th><th>Reps</th><th>RIR</th>';
+      table.appendChild(thead);
+
+      log.entries.forEach((entry, setIdx) => {
+        const row = document.createElement('tr');
+        const numTd = document.createElement('td');
+        numTd.textContent = setIdx + 1;
+        row.appendChild(numTd);
+
+        ['weight', 'reps'].forEach(field => {
+          const td = document.createElement('td');
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.inputMode = 'decimal';
+          input.value = entry[field];
+          input.addEventListener('input', (e) => updateSetField(day, slotIdx, clientIdx, setIdx, field, e.target.value));
+          td.appendChild(input);
+          row.appendChild(td);
+        });
+
+        const rirTd = document.createElement('td');
+        const rirSelect = document.createElement('select');
+        rirSelect.className = 'rir-select';
+        const opts = ['', '0', '1', '2', '3', '4', '5+'];
+        opts.forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o;
+          opt.textContent = o === '' ? '—' : o;
+          if (entry.rir === o) opt.selected = true;
+          rirSelect.appendChild(opt);
+        });
+        rirSelect.addEventListener('change', (e) => updateSetField(day, slotIdx, clientIdx, setIdx, 'rir', e.target.value));
+        rirTd.appendChild(rirSelect);
+        row.appendChild(rirTd);
+
+        table.appendChild(row);
+      });
+
+      block.appendChild(table);
+      div.appendChild(block);
+    });
+
+    container.appendChild(div);
+  });
+}
+
+loadState();
+</script>
+</body>
+</html>
